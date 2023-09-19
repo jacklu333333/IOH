@@ -91,10 +91,15 @@ def image2numpy(dir2img: str, entrance: list = []):
 
     # convert gray scale
     img = img.convert('L')
+    # invert the image
+    img = Image.eval(img, lambda x: 255-x)
 
-    # corp the image to where the numpy array is not null
+    # corp the image to where the numpy array is not 0
     img = img.crop(img.getbbox())
 
+    # invert the image back
+    img = Image.eval(img, lambda x: 255-x)
+    
     # convert to numpy array
     numpy_data = np.array(img)
     numpy_data = np.invert(numpy_data.astype(np.bool_)).astype(np.float32)
