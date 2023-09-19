@@ -54,10 +54,18 @@ class IOHandler:
         return self.map[x, y]
 
 
-def recursivePadding(img: np.array, padding_value: int, x: int, y: int):
-    # print(x, y, padding_value)
+def recursivePadding(img: np.array, center: np.array, nextpoint: np.array, preDistance: float):
+    assert center.shape == nextpoint.shape == (2,)
+    x, y = nextpoint
+    distance = np.linalg.norm(nextpoint-center)
+    padding_value = 1 - distance/100
+
+    # print(f'x: {x}, y: {y}, padding_value: {padding_value}')
+    # print(
+    #     f'center{center} current" {nextpoint}preDistance: {preDistance}, distance: {distance}')
+
     # check if the padding value is 0
-    if padding_value <= 0:
+    if padding_value <= 0 or distance < preDistance:
         return
 
     # check if the coordinate is in img array
@@ -65,15 +73,17 @@ def recursivePadding(img: np.array, padding_value: int, x: int, y: int):
         return
 
     # check if the coordinate is already padded
-    if img[x, y] != 0 and img[x, y] > padding_value:
+    if img[x, y] != 0 and padding_value <= img[x, y]:
         return
 
+    # padding
     img[x, y] = padding_value
 
-    recursivePadding(img, padding_value-0.01, x - 1, y)
-    recursivePadding(img, padding_value-0.01, x + 1, y)
-    recursivePadding(img, padding_value-0.01, x, y - 1)
-    recursivePadding(img, padding_value-0.01, x, y + 1)
+    # recursive padding
+    recursivePadding(img, center, nextpoint + np.array([1, 0]), distance)
+    recursivePadding(img, center, nextpoint + np.array([0, 1]), distance)
+    recursivePadding(img, center, nextpoint + np.array([0, -1]), distance)
+    recursivePadding(img, center, nextpoint + np.array([-1, 0]), distance)
 
 
 def image2numpy(dir2img: str, entrance: list = []):
@@ -91,6 +101,11 @@ def image2numpy(dir2img: str, entrance: list = []):
 
     # for each entrace contain a pair of x and y
     for x, y in entrance:
-        recursivePadding(numpy_data, 0.9, x, y)
+        recursivePadding(
+            numpy_data,
+            np.array([x, y]),
+            np.array([x, y]),
+            -1
+        )
 
     return numpy_data
