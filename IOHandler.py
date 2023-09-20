@@ -1,60 +1,151 @@
-from PIL import Image
+import matplotlib.path as mplPath
 import numpy as np
+from PIL import Image
 
 
 class IOHandler:
-    def __init__(self, map: np.array, latitudeStart: float, longitudeStart: float, latitudeEnd: float, longitudeEnd: float):
+    '''
+    IOHandler is a class to handle the input and output of the map
+    '''
+
+    def __init__(
+        self,
+            map: np.array,
+            pointStart: np.array,  # starting store in (x,y), top left corner
+            pointEnd: np.array  # ending store in (x,y), bottom right corner
+    ):
         self.map = map
         self.width, self.height = map.shape
         # check the ending is larger than the starting
-        assert latitudeStart < latitudeEnd
-        assert longitudeStart < longitudeEnd
+        assert pointStart[1] < pointEnd[1]
+        assert pointStart[0] < pointEnd[0]
 
         # the latitude and longitude the top left corner of the map fill out the matching map
-        self.longitudeS = longitudeStart
-        self.latitudeS = latitudeStart
+        self.xS = pointStart[0]
+        self.yS = pointStart[1]
 
-        self.longitudeE = longitudeEnd
-        self.latitudeE = latitudeEnd
+        self.xE = pointEnd[0]
+        self.yE = pointEnd[1]
 
-        self.longitudinal_resolution = (
-            longitudeEnd - longitudeStart) / self.width
-        self.latitudinal_resolution = (
-            latitudeEnd - latitudeStart) / self.height
+        self.x_resolution = (
+            pointEnd[0] - pointStart[0]) / self.width
+        self.y_resolution = (
+            pointEnd[1] - pointStart[1]) / self.height
 
-        self.longitudes = []
+        self.x_coordinates = []
         for i in range(self.width):
-            self.longitudes.append(
-                self.longitudeS + self.longitudinal_resolution * i)
-        self.longitudes = np.array(self.longitudes)
-        self.latitudes = []
+            self.x_coordinates.append(
+                self.xS + self.x_resolution * i)
+        self.x_coordinates = np.array(self.x_coordinates)
 
+        self.y_coordinates = []
         for i in range(self.height):
-            self.latitudes.append(
-                self.latitudeS + self.latitudinal_resolution * i)
-        self.latitudes = np.array(self.latitudes)
+            self.y_coordinates.append(
+                self.yS + self.y_resolution * i)
+        self.y_coordinates = np.array(self.y_coordinates)
 
-    def map2latlon(self, x, y):
-        return self.latitudes[y], self.longitudes[x]
+    def map2coordinate(self, x, y):
+        '''
+        convert the map index to the coordinate
+        ----------------------------------------------------
+        input:
+            x: the x index of the map
+            y: the y index of the map
+        ----------------------------------------------------
+        output:
+            the coordinate of the map
+        '''
+        return self.y_coordinates[y], self.x_coordinates[x]
 
-    def latlon2map(self, lat, lon):
-        # find the closest latitude and longitude
-        y = np.argmin(np.abs(self.latitudes - lat))
-        x = np.argmin(np.abs(self.longitudes - lon))
+    # def latlon2map(self, lat, lon):
+    #     # find the closest latitude and longitude
+    #     y = np.argmin(np.abs(self.y_coordinates - lat))
+    #     x = np.argmin(np.abs(self.x_coordinates - lon))
+    #     return x, y
+
+    def coordinate2map(self, x, y):
+        '''
+        convert the coordinate to the map index
+        ----------------------------------------------------
+        input:
+            x: the x coordinate of the map
+            y: the y coordinate of the map
+        ----------------------------------------------------
+        output:
+            the index of the map
+        '''
+        # find the closest grid
+        x = np.argmin(np.abs(self.x_coordinates - x))
+        y = np.argmin(np.abs(self.y_coordinates - y))
         return x, y
 
-    def searchValid(self, latitude: float, lontitude: float):
+    def searchValid(self, x: float, y: float):
+        '''
+        check if the coordinate is valid
+        ----------------------------------------------------
+        input:
+            x: the x coordinate of the map
+            y: the y coordinate of the map
+        ----------------------------------------------------
+        output:
+            0-1 if the coordinate is valid
+            False if the coordinate is not valid
+        '''
         # check if the coordinate is in the map
-        if latitude < self.latitudeS or latitude > self.latitudeE or lontitude < self.longitudeS or lontitude > self.longitudeE:
+        if y < self.yS or y > self.yE or x < self.xS or x > self.xE:
             print("The coordinate is not in the map")
             return False
 
-        x, y = self.latlon2map(latitude, lontitude)
+        x, y = self.coordinate2map(x, y)
 
         return self.map[x, y]
 
+    def searchValidNumpy(self, xs: np.array, ys: np.array):
+        '''
+        check if the coordinate is valid with numpy array
+        ----------------------------------------------------
+        input:
+            xs: the x coordinate of the map, in numpy array
+            ys: the y coordinate of the map, in numpy array
+        ----------------------------------------------------
+        output:
+            0-1 if the coordinate is valid
+            False if the coordinate is not valid
+        '''
+        assert ys.shape == xs.shape
+
+        # the input is a numpy array with a series of points's latitude and longitude to check if it is valid
+
+        result_in = np.ones(ys.shape)
+        # check if the coordinate is in the map if not set the value to False
+        result_in[(ys < self.yS) | (ys > self.yE) | (
+            xs < self.xS) | (xs > self.xE)] = False
+
+        result_v = np.zeros(ys.shape)
+        x = np.argmin(
+            np.abs(self.x_coordinates - xs.reshape(-1, 1)), axis=1)
+        y = np.argmin(np.abs(self.y_coordinates -
+                      ys.reshape(-1, 1)), axis=1)
+        # using numpy index to find the index of the coordinate
+        result_v = self.map[x, y]
+        result_v[result_in == False] = False
+
+        return result_v
+
 
 def recursivePadding(img: np.array, center: np.array, nextpoint: np.array, preDistance: float):
+    '''
+    recursive padding the img with the diffusion effect
+    ----------------------------------------------------
+    input:
+        img: the numpy array of the image
+        center: the center of the padding
+        nextpoint: the next point to padding
+        preDistance: the distance between the center and the nextpoint
+    ----------------------------------------------------
+    output:
+        None
+    '''
     assert center.shape == nextpoint.shape == (2,)
     x, y = nextpoint
     distance = np.linalg.norm(nextpoint-center)
@@ -87,6 +178,17 @@ def recursivePadding(img: np.array, center: np.array, nextpoint: np.array, preDi
 
 
 def image2numpy(dir2img: str, entrance: list = []):
+    '''
+    convert the image to numpy array
+    and padding the entrance with the diffusion effect
+    ----------------------------------------------------
+    input:
+        dir2img: the directory to the image
+        entrance: a list of entrance coordinate in the of numpy grid index (x,y)
+    ----------------------------------------------------            
+    output:
+        numpy_data: the numpy array of the image
+    '''
     img = Image.open(dir2img)
 
     # convert gray scale
@@ -99,7 +201,7 @@ def image2numpy(dir2img: str, entrance: list = []):
 
     # invert the image back
     img = Image.eval(img, lambda x: 255-x)
-    
+
     # convert to numpy array
     numpy_data = np.array(img)
     numpy_data = np.invert(numpy_data.astype(np.bool_)).astype(np.float32)
@@ -114,3 +216,47 @@ def image2numpy(dir2img: str, entrance: list = []):
         )
 
     return numpy_data
+
+
+def poly2numpy(polygon: list) -> np.array:
+    '''
+    convert the polygon to numpy array map
+    ----------------------------------------------------
+    input:
+        polygon: a list of polygon coordinate in the of numpy grid index (x,y)
+    ----------------------------------------------------
+    output:
+        map_array: the numpy array map
+    '''
+
+    top = min(polygon, key=lambda x: x[0])[0]
+    bottom = max(polygon, key=lambda x: x[0])[0]
+    left = min(polygon, key=lambda x: x[1])[1]
+    right = max(polygon, key=lambda x: x[1])[1]
+    print(f'top: {top}\n, left: {left},\n bottom: {bottom},\n right: {right}\n')
+    width = int(round(right - left, 0))
+    height = int(round(bottom - top, 0))
+
+    # Your numpy array map
+    map_array = np.zeros((width, height))
+
+    for poly in polygon:
+        poly = np.array(poly).reshape(-1, 2)
+        # print(poly)
+        # c = input("continue?")
+        poly[:, 0] -= top
+        poly[:, 1] -= left
+        # round by 0.5
+        poly = np.round(poly, 0)
+
+        # Create a Path object from the polygon vertices
+        poly_path = mplPath.Path(poly)
+
+        # Iterate over each point in the map array
+        for i in range(map_array.shape[0]):
+            for j in range(map_array.shape[1]):
+                # If the point is inside the polygon, set its value to 1.0
+                if poly_path.contains_point((j, i)):
+                    map_array[i, j] = 1.0
+
+    return map_array
