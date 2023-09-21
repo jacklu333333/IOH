@@ -1,24 +1,36 @@
 import matplotlib.path as mplPath
+import matplotlib.pyplot as plt
 import numpy as np
+import pyproj
+from mpl_toolkits.mplot3d import Axes3D
 from PIL import Image
 
 
 class IOHandler:
     '''
     IOHandler is a class to handle the input and output of the map
+    ----------------------------------------------------
+    input:
+        map: the map in numpy array
+        pointStart: starting store in (x,y), bottom left corner
+        pointEnd: ending store in (x,y), top right corner
+    ----------------------------------------------------
+    output:
+        the object of the IOHandler
     '''
 
     def __init__(
         self,
-            map: np.array,
-            pointStart: np.array,  # starting store in (x,y), top left corner
-            pointEnd: np.array  # ending store in (x,y), bottom right corner
+            map: np.array,  # the map in numpy array
+            # starting store in (x,y), bottom left corner
+            pointStart: np.array,
+            pointEnd: np.array  # ending store in (x,y), top right corner
     ):
         self.map = map
         self.width, self.height = map.shape
         # check the ending is larger than the starting
-        assert pointStart[1] < pointEnd[1]
         assert pointStart[0] < pointEnd[0]
+        assert pointStart[1] < pointEnd[1]
 
         # the latitude and longitude the top left corner of the map fill out the matching map
         self.xS = pointStart[0]
@@ -218,36 +230,51 @@ def image2numpy(dir2img: str, entrance: list = []):
     return numpy_data
 
 
-def poly2numpy(polygon: list) -> np.array:
+def poly2numpy(polygon: list,heights:list=[]) -> np.array:
     '''
     convert the polygon to numpy array map
     ----------------------------------------------------
     input:
-        polygon: a list of polygon coordinate in the of numpy grid index (x,y)
+        polygon: a list of polygon coordinate in the of numpy grid index (y,x)
     ----------------------------------------------------
     output:
         map_array: the numpy array map
     '''
+    if len(heights)==0:
+        heights = [1 for _ in range(len(polygon))]
+        
+    assert len(polygon)==len(heights)
+    # top =
+    # bottom =
+    # left =
+    # right =
 
-    top = min(polygon, key=lambda x: x[0])[0]
-    bottom = max(polygon, key=lambda x: x[0])[0]
-    left = min(polygon, key=lambda x: x[1])[1]
-    right = max(polygon, key=lambda x: x[1])[1]
-    print(f'top: {top}\n, left: {left},\n bottom: {bottom},\n right: {right}\n')
+    # Unpack the polygon points
+    points = np.array([p for poly in polygon for p in poly]).reshape(-1, 2)
+
+    # Find the top, bottom, left, right
+    top = max(points[:, 0])
+    bottom = min(points[:, 0])
+    right = max(points[:, 1])
+    left = min(points[:, 1])
+
+    print(f'{"bottom:":<8s} {bottom}')
+    print(f'{"left:":<8s} {left}')
+    print(f'{"top:":<8s} {top}')
+    print(f'{"right:":<8s} {right}')
+
     width = int(round(right - left, 0))
-    height = int(round(bottom - top, 0))
+    height = int(round(top-bottom, 0))
 
     # Your numpy array map
     map_array = np.zeros((width, height))
 
-    for poly in polygon:
-        poly = np.array(poly).reshape(-1, 2)
+    for poly,height in zip(polygon,heights):
+        poly = np.array(poly).reshape(-1, 2)[:, ::-1]
         # print(poly)
         # c = input("continue?")
-        poly[:, 0] -= top
-        poly[:, 1] -= left
-        # round by 0.5
-        poly = np.round(poly, 0)
+        poly[:, 0] -= left
+        poly[:, 1] -= bottom
 
         # Create a Path object from the polygon vertices
         poly_path = mplPath.Path(poly)
@@ -256,7 +283,76 @@ def poly2numpy(polygon: list) -> np.array:
         for i in range(map_array.shape[0]):
             for j in range(map_array.shape[1]):
                 # If the point is inside the polygon, set its value to 1.0
-                if poly_path.contains_point((j, i)):
-                    map_array[i, j] = 1.0
+                if poly_path.contains_point((i, j)):
+                    map_array[i, j] = height
 
     return map_array
+
+
+def latlonTransformer(positions: np.array, source: str = 'epsg:4326', target: str = 'epsg:5179') -> np.array:
+    '''
+    convert the latitude and longitude to the coordinate
+    ----------------------------------------------------
+    input:
+        positions: a numpy array of latitude and longitude
+        source: the epsg of the input
+        target: the epsg of the output
+    ----------------------------------------------------
+    output:
+        the coordinate of the map in the target epsg
+    '''
+    transformer = pyproj.Transformer.from_crs(
+        source, target, always_xy=True)
+    result = transformer.transform(positions[:, 0], positions[:, 1])
+    result = np.array(result).swapaxes(0, 1).reshape(-1, 2)
+
+    return result
+
+
+def plot3dMap(mapInHeight):
+    '''
+    plot the 3d map
+    ----------------------------------------------------
+    input:
+        mapInHeight: the map in numpy array
+    ----------------------------------------------------
+    output:
+        fig: the figure of the plot
+        ax: the axis of the plot
+    '''
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    x = np.arange(mapInHeight.shape[1])
+    y = np.arange(mapInHeight.shape[0])
+    x, y = np.meshgrid(x, y)
+
+    ax.plot_surface(x, y, mapInHeight, cmap='viridis')
+    ax.set_aspect('equal')
+
+    fig.show()
+    return fig, ax
+
+
+def mapHeightTo3D(mapHeight:np.array):
+    '''
+    convert the map in height to 3d map
+    ----------------------------------------------------
+    input:
+        mapHeight: the map in height
+    ----------------------------------------------------
+    output:
+        spatial: the spatial of the map
+    '''
+    # round the height
+    mapHeight = np.round(mapHeight+0.5, 0).astype(np.int32)
+    # find the max height
+    maxHeight, minHeight = np.max(mapHeight), np.min(mapHeight)
+    # create the spatial
+    spatial = np.zeros((mapHeight.shape[0], mapHeight.shape[1], maxHeight-minHeight+1))
+    # fill the spatial
+    for i in range(mapHeight.shape[0]):
+        for j in range(mapHeight.shape[1]):
+            spatial[i, j, :mapHeight[i, j]-minHeight] = 1
+
+    return spatial
