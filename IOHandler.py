@@ -242,6 +242,9 @@ def poly2numpy(polygon: list,heights:list=[]) -> np.array:
     '''
     if len(heights)==0:
         heights = [1 for _ in range(len(polygon))]
+    else:
+        # replace all value 0 to 1
+        heights = [1 if h<=0 else h for h in heights]
         
     assert len(polygon)==len(heights)
     # top =
